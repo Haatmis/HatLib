@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HatInit — nouveau projet</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #2a2e38;
+    --text: #e8eaed;
+    --muted: #9aa0ac;
+    --accent: #7c9eff;
+    --ok: #4ade80;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+    padding: 24px;
+  }
+  .card {
+    width: 100%;
+    max-width: 520px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+  }
+  h1 { font-size: 1.1rem; margin: 0 0 6px; }
+  p.sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 24px; line-height: 1.5; }
+  label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin: 16px 0 6px;
+  }
+  input[type="text"], select {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #0f1115;
+    color: var(--text);
+    font-size: 0.95rem;
+  }
+  .later {
+    margin-top: 22px;
+    padding: 12px 14px;
+    background: rgba(124,158,255,0.06);
+    border: 1px solid rgba(124,158,255,0.2);
+    border-radius: 8px;
+    font-size: 0.82rem;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  button {
+    width: 100%;
+    margin-top: 24px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: none;
+    background: var(--accent);
+    color: #0f1115;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .result {
+    margin-top: 16px;
+    font-size: 0.85rem;
+    color: var(--ok);
+    display: none;
+    line-height: 1.5;
+  }
+  .result.show { display: block; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>HatInit — nouveau projet Roblox</h1>
+  <p class="sub">Juste le minimum pour démarrer l'architecture. Le reste se construit au fur et à mesure.</p>
+
+  <form id="form">
+    <label for="nom">Nom du jeu</label>
+    <input type="text" id="nom" required />
+
+    <label for="pitch">Pitch en une phrase</label>
+    <input type="text" id="pitch" placeholder="Ex : un tycoon où on construit une usine de bonbons" />
+
+    <label for="genre">Genre</label>
+    <select id="genre">
+      <option>Obby</option>
+      <option>Simulateur</option>
+      <option>RPG</option>
+      <option>Tycoon</option>
+      <option>FPS / combat</option>
+      <option>Autre</option>
+    </select>
+
+    <label for="mode">Mode de jeu</label>
+    <select id="mode">
+      <option>Solo uniquement</option>
+      <option>Multijoueur</option>
+      <option>Les deux</option>
+      <option>Pas encore décidé</option>
+    </select>
+
+    <label for="plateforme">Plateforme cible principale</label>
+    <select id="plateforme">
+      <option>Toutes (mobile + PC + console)</option>
+      <option>Mobile en priorité</option>
+      <option>PC en priorité</option>
+      <option>Pas encore décidé</option>
+    </select>
+
+    <div class="later">
+      <strong>Reporté à plus tard</strong> (sera ajouté au GDD au fur et à mesure) :
+      monétisation, style artistique, durée de session visée, boucle de gameplay détaillée, systèmes (inventaire, progression, économie...).
+    </div>
+
+    <button type="submit">Générer GDD.md</button>
+  </form>
+
+  <div class="result" id="result"></div>
+</div>
+
+<script>
+  document.getElementById('form').addEventListener('submit', (e) => {
+    e.preventDefault();
+
+    const nom = document.getElementById('nom').value.trim() || 'Sans titre';
+    const pitch = document.getElementById('pitch').value.trim() || '_non renseigné_';
+    const genre = document.getElementById('genre').value;
+    const mode = document.getElementById('mode').value;
+    const plateforme = document.getElementById('plateforme').value;
+
+    const md = `# ${nom}
+
+## Pitch
+${pitch}
+
+## Genre
+${genre}
+
+## Mode de jeu
+${mode}
+
+## Plateforme cible
+${plateforme}
+
+## À définir plus tard
+- Monétisation
+- Style artistique
+- Durée de session visée
+- Boucle de gameplay détaillée
+- Systèmes (inventaire, progression, économie, etc.)
+
+---
+_Généré via HatInit le ${new Date().toLocaleDateString('fr-FR')}._
+`;
+
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'GDD.md';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+
+    const r = document.getElementById('result');
+    r.className = 'result show';
+    r.innerHTML = `<strong>GDD.md téléchargé.</strong><br>Déplace-le à la racine de ton projet, puis dis "terminé" à Claude.`;
+  });
+</script>
+
+</body>
+</html>
