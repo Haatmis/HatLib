@@ -58,6 +58,15 @@
   pre{background:var(--field);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;overflow-x:auto;white-space:pre-wrap;margin:0}
   .empty{color:var(--muted);font-size:13px;text-align:center;padding:20px 0}
   details summary{cursor:pointer;color:var(--muted);font-size:12px;margin-bottom:8px}
+  #viewPanel{padding:12px 12px 10px}
+  #stage{width:100%;height:280px;display:block;border-radius:9px;background:#0d1119;
+    cursor:grab;touch-action:none}
+  #stage:active{cursor:grabbing}
+  .viewbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:10px}
+  .chip{font:inherit;font-size:12px;padding:5px 11px;border-radius:999px;cursor:pointer;
+    background:var(--field);border:1px solid var(--border);color:var(--muted)}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .viewbar .hint{margin-left:auto;font-size:11px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -70,6 +79,11 @@
       Dépose un fichier <code>.luau</code> ici<br><small>ou clique pour parcourir</small>
     </div>
     <input type="file" id="picker" accept=".luau,.lua" style="display:none">
+  </div>
+
+  <div class="panel" id="viewPanel" style="display:none">
+    <canvas id="stage"></canvas>
+    <div class="viewbar" id="viewbar"></div>
   </div>
 
   <div class="panel" id="fileInfo" style="display:none">
@@ -119,6 +133,8 @@ const fileInfo = $('fileInfo'), fnameEl = $('fname'), rwBadge = $('rwBadge');
 const fieldsEl = $('fields'), emptyMsg = $('emptyMsg'), saveBtn = $('saveBtn');
 const reloadBtn = $('reloadBtn'), doneBtn = $('doneBtn'), autoWrap = $('autoWrap'), autoSave = $('autoSave');
 const statusEl = $('status'), previewPanel = $('previewPanel'), previewEl = $('preview');
+const viewPanel = $('viewPanel'), stageEl = $('stage'), viewbarEl = $('viewbar');
+let stage = null;       // aperçu animé monté, ou null si le prefab n'en déclare pas
 
 // ---------------------------------------------------------------- chargement
 init();
@@ -149,7 +165,7 @@ async function loadFromBridge() {
     canWrite = true;
     rwBadge.textContent = 'écriture directe dans le projet';
     rwBadge.className = 'badge rw';
-    parseConfig(); render();
+    parseConfig(); render(); setupStage();
     fileInfo.style.display = 'block';
     setStatus('', '');
   } catch (err) {
@@ -201,7 +217,7 @@ async function loadFromFile(file, h) {
   rwBadge.textContent = canWrite ? 'écriture directe activée' : 'lecture seule (glisse le fichier pour activer l’écriture)';
   rwBadge.className = 'badge' + (canWrite ? ' rw' : '');
   autoWrap.style.display = canWrite ? '' : 'none';
-  parseConfig(); render();
+  parseConfig(); render(); setupStage();
   fileInfo.style.display = 'block';
   setStatus('', '');
 }
@@ -329,7 +345,12 @@ function renderField(f) {
 
   const ctl = document.createElement('div');
   ctl.className = 'ctl';
-  const changed = (rerender) => { updatePreview(); if (rerender) render(); scheduleAutoSave(); };
+  const changed = (rerender) => {
+    updatePreview();
+    if (stage) stage.sync();
+    if (rerender) render();
+    scheduleAutoSave();
+  };
 
   if (f.type === 'bool') {
     const sw = document.createElement('label'); sw.className = 'switch';
@@ -445,6 +466,74 @@ async function save(silent) {
 function setStatus(msg, cls) {
   statusEl.textContent = msg;
   statusEl.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+// ------------------------------------------------- aperçu animé
+// Le prefab déclare lui-même son aperçu : « -- 🎬 APERÇU: movement/sprint ».
+// Rien n'est codé en dur ici : le module `preview-<famille>.js` est chargé à la
+// demande, et un prefab sans annotation retrouve exactement la page d'avant.
+function detectStage() {
+  const m = rawText.match(/🎬\s*APER[ÇC]U\s*:\s*([A-Za-z0-9_-]+)(?:\s*\/\s*([A-Za-z0-9_-]+))?/i);
+  return m ? { family: m[1].toLowerCase(), scenario: (m[2] || '').toLowerCase() } : null;
+}
+
+const cfgValue = (name) => { const f = fieldByName(name); return f ? f.value : undefined; };
+
+let camChips = [];
+
+async function setupStage() {
+  if (stage) { stage.destroy(); stage = null; }
+  viewbarEl.innerHTML = '';
+  viewPanel.style.display = 'none';
+  camChips = [];
+
+  const spec = detectStage();
+  if (!spec) return;
+
+  // Sous le pont, la page est servie à la racine et /_page/ expose ses fichiers
+  // voisins ; en ouverture directe (file://), le module est simplement à côté.
+  const url = (bridge ? '/_page/' : './') + 'preview-' + spec.family + '.js';
+  let mod;
+  try {
+    mod = await import(url);
+  } catch (err) {
+    return setStatus('Aperçu « ' + spec.family + ' » introuvable (' + err.message + ')', 'err');
+  }
+
+  stage = mod.mount(stageEl, { get: cfgValue, scenario: spec.scenario, onCamera: markCamera });
+  viewPanel.style.display = 'block';
+  buildViewbar();
+}
+
+function buildViewbar() {
+  for (const c of stage.cameras) {
+    const b = document.createElement('button');
+    b.className = 'chip' + (c.id === stage.camera ? ' on' : '');
+    b.textContent = c.label;
+    b.dataset.cam = c.id;
+    b.addEventListener('click', () => { stage.setCamera(c.id); markCamera(c.id); });
+    viewbarEl.appendChild(b);
+    camChips.push(b);
+  }
+  let running = true;
+  const play = document.createElement('button');
+  play.className = 'chip on'; play.textContent = 'Pause';
+  play.addEventListener('click', () => {
+    running = !running;
+    stage.setPlaying(running);
+    play.textContent = running ? 'Pause' : 'Lecture';
+    play.classList.toggle('on', running);
+  });
+  const again = document.createElement('button');
+  again.className = 'chip'; again.textContent = 'Rejouer';
+  again.addEventListener('click', () => stage.replay());
+  const hint = document.createElement('span');
+  hint.className = 'hint'; hint.textContent = 'glisse pour tourner · molette pour zoomer';
+  viewbarEl.append(play, again, hint);
+}
+
+function markCamera(id) {
+  for (const b of camChips) b.classList.toggle('on', b.dataset.cam === id);
 }
 </script>
 </body>

@@ -155,6 +155,21 @@ const server = createServer(async (req, res) => {
       return res.end(html);
     }
 
+    // Fichiers voisins de la page (modules d'aperçu du configurateur). La page
+    // vit hors du projet — souvent dans le skill installé en plugin — donc elle
+    // ne peut pas les servir via la racine projet. Accès confiné à son dossier.
+    if (p.startsWith("/_page/")) {
+      const dir = path.dirname(pagePath);
+      const target = path.resolve(dir, p.slice("/_page/".length));
+      if (!target.startsWith(dir + path.sep)) throw new Error("chemin hors du dossier de la page");
+      const buf = await readFile(target);
+      res.writeHead(200, {
+        "content-type": MIME[path.extname(target).toLowerCase()] || "text/plain; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      return res.end(buf);
+    }
+
     // Statique, confiné au projet
     const abs = resolveInRoot(p);
     const buf = await readFile(abs);

@@ -6,6 +6,7 @@
 ]]
 
 -- ⚙️ CONFIG
+-- 🎬 APERÇU: movement/sprint
 -- ▸ Base
 local SPRINT_KEY = Enum.KeyCode.LeftShift -- touche de sprint au clavier
 local SPRINT_MODE = "Hold" -- maintien ou bascule, options: Hold|Toggle

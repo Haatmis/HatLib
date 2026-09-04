@@ -5,6 +5,7 @@
 ]]
 
 -- ⚙️ CONFIG
+-- 🎬 APERÇU: movement/dash
 -- ▸ Base
 local DASH_KEY = Enum.KeyCode.Q -- touche de dash au clavier
 local DASH_DIRECTION = "Deplacement" -- d'où vient la direction, options: Deplacement|Camera

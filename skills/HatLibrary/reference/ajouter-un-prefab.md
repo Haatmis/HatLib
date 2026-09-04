@@ -52,9 +52,30 @@ Règles :
 | `-- options: A\|B\|C` | menu déroulant |
 | `-- ▸ Titre` | titre de section |
 | `-- si: ENABLE_X` | l'option n'apparaît que si `ENABLE_X` est coché |
+| `-- 🎬 APERÇU: famille/scenario` | aperçu animé au-dessus des réglages (voir plus bas) |
 | autre expression Luau | champ texte brut (secours) |
 
 Seules les lignes du bloc CONFIG sont réécrites ; le reste du fichier est recopié à l'identique.
+
+### Aperçu animé
+
+Un prefab peut demander une scène 3D qui joue son comportement en direct, réglages compris : une
+ligne dans le bloc CONFIG suffit.
+
+```lua
+-- ⚙️ CONFIG
+-- 🎬 APERÇU: movement/sprint
+```
+
+La **famille** désigne le module chargé (`preview-movement.js`, à côté de `configurator.html`), le
+**scénario** ce qu'il joue. Existants : `movement/sprint`, `movement/dash`, `movement/jump`. La
+caméra suit le personnage (Côté / Dos / Face / Isométrique, glisser pour tourner, molette pour
+zoomer) et le module relit les valeurs à chaque image — bouger un curseur change l'animation
+immédiatement.
+
+Sans annotation, ou si le module est absent, la page reste exactement celle d'avant : l'aperçu est
+un bonus, jamais une dépendance. Une nouvelle famille = un nouveau `preview-<famille>.js` exportant
+`cameras` et `mount(canvas, api)` ; le cœur du configurateur n'est pas à toucher.
 
 **Limite volontaire** : le configurateur règle des *valeurs*, pas de la logique. Une fonctionnalité
 qui n'existe pas encore s'écrit une fois en code, derrière un `ENABLE_X`, et devient pilotable

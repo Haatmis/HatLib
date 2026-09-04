@@ -6,6 +6,7 @@
 ]]
 
 -- ⚙️ CONFIG
+-- 🎬 APERÇU: movement/jump
 -- ▸ Base
 local MAX_JUMPS = 2 -- nombre total de sauts, celui du sol compris, 1..5
 local EXTRA_JUMP_POWER = 50 -- puissance des sauts en l'air, 20..120
