@@ -35,13 +35,13 @@ const slice = (from, to) => {
   return html.slice(a, b);
 };
 const makeParser = new Function(`
-  let rawText = ""; let items = []; let blockStart = -1, blockEnd = -1;
+  let rawText = ""; let items = []; let blockStart = -1, blockEnd = -1; let eol = "\\n";
   ${slice("function parseConfig()", "// ---------------------------------------------------------------- rendu")}
   ${slice("function serialize(f)", "function updatePreview()")}
   return {
     parse: (t) => { rawText = t; parseConfig(); return { items, blockStart, blockEnd }; },
-    rebuild: () => { const l = rawText.split("\\n");
-      return [...l.slice(0, blockStart), ...buildBlockLines(), ...l.slice(blockEnd)].join("\\n"); },
+    rebuild: () => { const l = rawText.split(/\\r?\\n/);
+      return [...l.slice(0, blockStart), ...buildBlockLines(), ...l.slice(blockEnd)].join(eol); },
   };
 `);
 

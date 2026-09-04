@@ -1,0 +1,4 @@
+# Fins de ligne stables quel que soit l OS : evite que git convertisse en CRLF
+# au clone sous Windows (le parseur du configurateur lit du LF).
+* text=auto eol=lf
+*.png binary

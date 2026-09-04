@@ -110,6 +110,7 @@ let canWrite = false;
 let rawText = "";
 let items = [];         // {kind:'raw',text} | {kind:'field',...} — contenu du bloc CONFIG, dans l'ordre
 let blockStart = -1, blockEnd = -1;
+let eol = '\n';         // fins de ligne du fichier — restituées telles quelles à l'écriture
 let saveTimer = null;
 
 const $ = id => document.getElementById(id);
@@ -209,7 +210,10 @@ async function loadFromFile(file, h) {
 // Bloc = lignes entre "⚙️ CONFIG" et "⚙️ FIN CONFIG". Sans marqueur de fin,
 // on s'arrête à la première ligne vide (ancienne convention, toujours supportée).
 function parseConfig() {
-  const lines = rawText.split('\n');
+  // Un fichier venu de git sous Windows est en CRLF. En JS, « . » ne franchit pas
+  // un \r : sans découpage tolérant, aucune ligne CONFIG ne serait reconnue.
+  eol = rawText.includes('\r\n') ? '\r\n' : '\n';
+  const lines = rawText.split(/\r?\n/);
   items = []; blockStart = blockEnd = -1;
   const startIdx = lines.findIndex(l => /⚙️\s*CONFIG/i.test(l) && !/FIN\s*CONFIG/i.test(l));
   if (startIdx === -1) return;
@@ -407,8 +411,8 @@ function scheduleAutoSave() {
 
 async function save(silent) {
   if (blockStart === -1) return;
-  const allLines = rawText.split('\n');
-  const newText = [...allLines.slice(0, blockStart), ...buildBlockLines(), ...allLines.slice(blockEnd)].join('\n');
+  const allLines = rawText.split(/\r?\n/);
+  const newText = [...allLines.slice(0, blockStart), ...buildBlockLines(), ...allLines.slice(blockEnd)].join(eol);
 
   if (bridge && bridgeFile) {
     try {
