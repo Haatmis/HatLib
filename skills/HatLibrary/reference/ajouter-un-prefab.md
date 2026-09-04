@@ -60,6 +60,21 @@ Seules les lignes du bloc CONFIG sont réécrites ; le reste du fichier est reco
 qui n'existe pas encore s'écrit une fois en code, derrière un `ENABLE_X`, et devient pilotable
 visuellement pour toujours.
 
+## Vérifier le prefab — obligatoire avant de l'ajouter à l'index
+
+```bash
+node .claude/skills/HatLibrary/check.mjs ~/HatLib/library/snippets/<cat>/<Nom>.luau
+node .claude/skills/HatLibrary/check.mjs --all      # toute la bibliothèque
+```
+
+Il contrôle : blocs Luau ouverts/fermés (`end` manquant ou en trop), bloc CONFIG lisible par le
+**parseur réel du configurateur**, `si:` qui pointe sur un booléen existant, valeur présente dans ses
+`options:`, nombre dans ses bornes `min..max`, aller-retour d'écriture neutre, `return` final, et
+entrée d'index avec `tags:`. Sortie non nulle si un prefab échoue.
+
+Ce n'est **pas** un interpréteur Luau : il ne voit ni les fautes de logique, ni les mauvais appels
+d'API Roblox. Un test en jeu reste nécessaire.
+
 ## Enregistrer le prefab dans la bibliothèque
 
 1. Fichier dans `~/HatLib/library/snippets/<categorie>/<Nom>.luau`.
