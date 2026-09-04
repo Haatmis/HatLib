@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HatLibrary — Configurateur de prefab</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --border:#2a2e38; --text:#e6e8ec; --muted:#8a90a0;
+    --accent:#5b8cff; --accent-2:#3fd48a; --danger:#ff5b6a; --field:#1e222b;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f5f6f8; --panel:#ffffff; --border:#dde1e8; --text:#1a1d24; --muted:#5b6272;
+      --accent:#3563e9; --accent-2:#1f9d63; --danger:#d4283a; --field:#f0f2f6; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;padding:28px 16px 64px}
+  .wrap{max-width:680px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:20px}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px}
+  .drop{border:2px dashed var(--border);border-radius:12px;padding:28px;text-align:center;color:var(--muted);cursor:pointer;transition:.15s}
+  .drop.drag{border-color:var(--accent);color:var(--accent)}
+  .drop small{display:block;margin-top:6px}
+  .filerow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-bottom:14px}
+  .filerow b{color:var(--text);font-weight:600;font-family:ui-monospace,Consolas,monospace}
+  .badge{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--field);color:var(--muted)}
+  .badge.rw{background:rgba(63,212,138,.15);color:var(--accent-2)}
+  .section{margin:18px 0 2px;padding-top:14px;border-top:1px solid var(--border);
+    font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .section:first-child{margin-top:0;padding-top:0;border-top:none}
+  .field{display:flex;align-items:center;gap:12px;padding:9px 0}
+  .field + .field{border-top:1px solid var(--border)}
+  .field.dep{padding-left:14px;border-left:2px solid var(--border);margin-left:2px}
+  .field label.lbl{flex:0 0 42%;font-size:13px;color:var(--text)}
+  .field .desc{display:block;font-size:11px;color:var(--muted);font-weight:400}
+  .field .ctl{flex:1;display:flex;align-items:center;gap:8px;min-width:0}
+  input[type=text],input[type=number],select{
+    width:100%;background:var(--field);border:1px solid var(--border);color:var(--text);
+    border-radius:8px;padding:7px 10px;font:inherit}
+  input[type=range]{flex:1;min-width:0;accent-color:var(--accent)}
+  .num{width:76px;flex:none}
+  .switch{position:relative;display:inline-block;width:38px;height:22px;flex:none}
+  .switch input{opacity:0;width:0;height:0}
+  .slider{position:absolute;inset:0;background:var(--field);border:1px solid var(--border);border-radius:22px;cursor:pointer;transition:.15s}
+  .slider:before{content:"";position:absolute;height:16px;width:16px;left:2px;top:2px;background:var(--muted);border-radius:50%;transition:.15s}
+  input:checked + .slider{background:var(--accent);border-color:var(--accent)}
+  input:checked + .slider:before{transform:translateX(16px);background:#fff}
+  .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:20px}
+  button{font:inherit;border:none;border-radius:8px;padding:9px 16px;cursor:pointer}
+  .btn-primary{background:var(--accent);color:#fff}
+  .btn-primary:disabled{opacity:.4;cursor:not-allowed}
+  .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+  .auto{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);margin-left:auto}
+  .status{font-size:13px;margin-top:10px;min-height:18px}
+  .status.ok{color:var(--accent-2)}
+  .status.err{color:var(--danger)}
+  pre{background:var(--field);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;overflow-x:auto;white-space:pre-wrap;margin:0}
+  .empty{color:var(--muted);font-size:13px;text-align:center;padding:20px 0}
+  details summary{cursor:pointer;color:var(--muted);font-size:12px;margin-bottom:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Configurateur de prefab</h1>
+  <div class="sub" id="sub">Ajuste le bloc <code>⚙️ CONFIG</code> visuellement — le reste du code n'est jamais touché.</div>
+
+  <div class="panel" id="dropPanel">
+    <div id="drop" class="drop">
+      Dépose un fichier <code>.luau</code> ici<br><small>ou clique pour parcourir</small>
+    </div>
+    <input type="file" id="picker" accept=".luau,.lua" style="display:none">
+  </div>
+
+  <div class="panel" id="fileInfo" style="display:none">
+    <div class="filerow"><b id="fname"></b> <span class="badge" id="rwBadge"></span></div>
+    <div id="fields"></div>
+    <div id="emptyMsg" class="empty" style="display:none">Aucun bloc <code>⚙️ CONFIG</code> trouvé dans ce fichier.</div>
+    <div class="actions">
+      <button class="btn-primary" id="saveBtn" disabled>Enregistrer</button>
+      <button class="btn-ghost" id="reloadBtn">Recharger</button>
+      <button class="btn-ghost" id="doneBtn" style="display:none">Terminé</button>
+      <label class="auto" id="autoWrap" style="display:none">
+        <input type="checkbox" id="autoSave" checked> enregistrement auto
+      </label>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="panel" id="previewPanel" style="display:none">
+    <details>
+      <summary>Aperçu du bloc CONFIG écrit dans le fichier</summary>
+      <pre id="preview"></pre>
+    </details>
+  </div>
+</div>
+
+<script>
+const COMMON_KEYCODES = ["LeftShift","RightShift","LeftControl","RightControl","LeftAlt","RightAlt",
+  "Space","E","F","Q","R","G","C","V","X","Z","T","B","Tab","CapsLock",
+  "One","Two","Three","Four",
+  "ButtonL3","ButtonR3","ButtonL1","ButtonR1","ButtonA","ButtonB","ButtonX","ButtonY"];
+
+const params = new URLSearchParams(location.search);
+const bridgeFile = params.get('file');   // mode pont : chemin relatif au projet
+let bridge = false;                      // pont HatBridge disponible ?
+
+let handle = null;      // FileSystemFileHandle (drag&drop) — écriture directe hors pont
+let canWrite = false;
+let rawText = "";
+let items = [];         // {kind:'raw',text} | {kind:'field',...} — contenu du bloc CONFIG, dans l'ordre
+let blockStart = -1, blockEnd = -1;
+let saveTimer = null;
+
+const $ = id => document.getElementById(id);
+const dropPanel = $('dropPanel'), dropEl = $('drop'), pickerEl = $('picker');
+const fileInfo = $('fileInfo'), fnameEl = $('fname'), rwBadge = $('rwBadge');
+const fieldsEl = $('fields'), emptyMsg = $('emptyMsg'), saveBtn = $('saveBtn');
+const reloadBtn = $('reloadBtn'), doneBtn = $('doneBtn'), autoWrap = $('autoWrap'), autoSave = $('autoSave');
+const statusEl = $('status'), previewPanel = $('previewPanel'), previewEl = $('preview');
+
+// ---------------------------------------------------------------- chargement
+init();
+
+async function init() {
+  try {
+    const r = await fetch('/api/ping', { signal: AbortSignal.timeout(1500) });
+    bridge = (await r.json()).hatbridge === true;
+  } catch { bridge = false; }
+
+  if (bridge && bridgeFile) {
+    dropPanel.style.display = 'none';
+    doneBtn.style.display = '';
+    autoWrap.style.display = '';
+    await loadFromBridge();
+  } else if (bridge) {
+    $('sub').textContent = "Dépose un fichier .luau du projet — ou relance le configurateur en indiquant le fichier.";
+  }
+}
+
+async function loadFromBridge() {
+  try {
+    const r = await fetch('/api/read?path=' + encodeURIComponent(bridgeFile));
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'lecture impossible');
+    rawText = d.text;
+    fnameEl.textContent = d.path;
+    canWrite = true;
+    rwBadge.textContent = 'écriture directe dans le projet';
+    rwBadge.className = 'badge rw';
+    parseConfig(); render();
+    fileInfo.style.display = 'block';
+    setStatus('', '');
+  } catch (err) {
+    fileInfo.style.display = 'block';
+    setStatus('Impossible de lire ' + bridgeFile + ' (' + err.message + ')', 'err');
+  }
+}
+
+dropEl.addEventListener('click', () => pickerEl.click());
+dropEl.addEventListener('dragover', e => { e.preventDefault(); dropEl.classList.add('drag'); });
+dropEl.addEventListener('dragleave', () => dropEl.classList.remove('drag'));
+dropEl.addEventListener('drop', async e => {
+  e.preventDefault(); dropEl.classList.remove('drag');
+  const item = e.dataTransfer.items && e.dataTransfer.items[0];
+  if (item && item.getAsFileSystemHandle) {
+    try { handle = await item.getAsFileSystemHandle(); return await loadFromHandle(handle); }
+    catch { /* fallback lecture seule */ }
+  }
+  const file = e.dataTransfer.files[0];
+  if (file) await loadFromFile(file);
+});
+pickerEl.addEventListener('change', async () => {
+  const file = pickerEl.files[0];
+  if (file) { handle = null; await loadFromFile(file); }
+});
+reloadBtn.addEventListener('click', async () => {
+  if (bridge && bridgeFile) return loadFromBridge();
+  if (handle) return loadFromHandle(handle);
+  location.reload();
+});
+saveBtn.addEventListener('click', () => save(false));
+doneBtn.addEventListener('click', async () => {
+  await save(false);
+  try { await fetch('/api/quit', { method: 'POST' }); } catch {}
+  setStatus('Configuration enregistrée. Tu peux fermer cet onglet.', 'ok');
+  saveBtn.disabled = reloadBtn.disabled = doneBtn.disabled = true;
+});
+
+async function loadFromHandle(h) { await loadFromFile(await h.getFile(), h); }
+
+async function loadFromFile(file, h) {
+  rawText = await file.text();
+  fnameEl.textContent = file.name;
+  canWrite = false;
+  if (h) {
+    try { canWrite = (await h.requestPermission({ mode: 'readwrite' })) === 'granted'; handle = h; }
+    catch { canWrite = false; }
+  }
+  rwBadge.textContent = canWrite ? 'écriture directe activée' : 'lecture seule (glisse le fichier pour activer l’écriture)';
+  rwBadge.className = 'badge' + (canWrite ? ' rw' : '');
+  autoWrap.style.display = canWrite ? '' : 'none';
+  parseConfig(); render();
+  fileInfo.style.display = 'block';
+  setStatus('', '');
+}
+
+// ------------------------------------------------------------------ parsing
+// Bloc = lignes entre "⚙️ CONFIG" et "⚙️ FIN CONFIG". Sans marqueur de fin,
+// on s'arrête à la première ligne vide (ancienne convention, toujours supportée).
+function parseConfig() {
+  const lines = rawText.split('\n');
+  items = []; blockStart = blockEnd = -1;
+  const startIdx = lines.findIndex(l => /⚙️\s*CONFIG/i.test(l) && !/FIN\s*CONFIG/i.test(l));
+  if (startIdx === -1) return;
+  blockStart = startIdx + 1;
+
+  let endIdx = -1;
+  for (let i = blockStart; i < lines.length; i++) {
+    if (/⚙️\s*FIN\s*CONFIG/i.test(lines[i])) { endIdx = i; break; }
+  }
+  const hasEnd = endIdx !== -1;
+  const limit = hasEnd ? endIdx : lines.length;
+  const fieldRe = /^(\s*)local\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)(?:\s*--\s*(.*))?$/;
+
+  let i = blockStart;
+  for (; i < limit; i++) {
+    const line = lines[i];
+    const m = line.match(fieldRe);
+    if (m) { items.push(parseField(m[2], m[3].trim(), (m[4] || '').trim(), m[1])); continue; }
+    if (hasEnd) { items.push({ kind: 'raw', text: line }); continue; }
+    break; // ancienne convention : ligne vide ou non reconnue = fin du bloc
+  }
+  blockEnd = hasEnd ? endIdx : i;
+}
+
+function parseField(name, valueRaw, comment, indent) {
+  const f = { kind: 'field', name, raw: valueRaw, value: valueRaw, type: 'text', indent: indent || '' };
+
+  const depM = comment.match(/\b(?:si|if)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)/i);
+  if (depM) f.dep = depM[1];
+  const optM = comment.match(/\boptions?\s*:\s*([^—]+)$/i);
+  const rangeM = comment.match(/(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)/);
+
+  // Le libellé est le commentaire débarrassé de ses annotations.
+  f.comment = comment;
+  f.desc = comment
+    .replace(/\b(?:si|if)\s*:\s*[A-Za-z_][A-Za-z0-9_]*/ig, '')
+    .replace(/\boptions?\s*:\s*[^—]+$/i, '')
+    .replace(/(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)/g, '')
+    .split(',').map(s => s.trim()).filter(Boolean).join(', ');
+
+  if (valueRaw === 'true' || valueRaw === 'false') {
+    f.type = 'bool'; f.value = valueRaw === 'true';
+  } else if (/^Enum\.KeyCode\.\w+$/.test(valueRaw)) {
+    f.type = 'keycode'; f.value = valueRaw.replace('Enum.KeyCode.', '');
+  } else if (/^"#[0-9a-fA-F]{6}"$/.test(valueRaw)) {
+    f.type = 'color'; f.value = valueRaw.slice(1, -1);
+  } else if (/^-?\d+(\.\d+)?$/.test(valueRaw)) {
+    f.type = 'number'; f.value = parseFloat(valueRaw); f.isInt = !valueRaw.includes('.');
+    if (rangeM) { f.min = parseFloat(rangeM[1]); f.max = parseFloat(rangeM[2]); }
+    else { f.min = Math.min(0, f.value); f.max = Math.max(f.value * 2, f.value + 10, 10); }
+    f.step = f.isInt ? 1 : Math.max(0.01, Math.round((f.max - f.min) / 100 * 100) / 100);
+  } else if (/^".*"$/.test(valueRaw)) {
+    f.type = 'string'; f.value = valueRaw.slice(1, -1);
+    if (optM) { f.type = 'enum'; f.quoted = true; f.options = optM[1].split('|').map(s => s.trim()); }
+  } else if (optM) {
+    f.type = 'enum'; f.options = optM[1].split('|').map(s => s.trim());
+  }
+  return f;
+}
+
+// ---------------------------------------------------------------- rendu
+const fieldByName = n => items.find(it => it.kind === 'field' && it.name === n);
+
+function isVisible(f, seen) {
+  if (!f.dep) return true;
+  seen = seen || new Set();
+  if (seen.has(f.name)) return true;   // garde-fou anti-boucle
+  seen.add(f.name);
+  const parent = fieldByName(f.dep);
+  if (!parent) return true;
+  if (parent.type === 'bool' && parent.value !== true) return false;
+  return isVisible(parent, seen);
+}
+
+function prettyLabel(name) {
+  return name.toLowerCase().split('_').map(w => w ? w[0].toUpperCase() + w.slice(1) : w).join(' ');
+}
+
+function render() {
+  fieldsEl.innerHTML = '';
+  const fields = items.filter(it => it.kind === 'field');
+  emptyMsg.style.display = fields.length ? 'none' : 'block';
+  saveBtn.disabled = fields.length === 0;
+
+  for (const it of items) {
+    if (it.kind === 'raw') {
+      const m = it.text.match(/^\s*--\s*[▸►>]\s*(.+?)\s*$/);
+      if (m) {
+        const h = document.createElement('div');
+        h.className = 'section'; h.textContent = m[1];
+        fieldsEl.appendChild(h);
+      }
+      continue; // les autres lignes brutes sont conservées à l'écriture, pas affichées
+    }
+    if (!isVisible(it)) continue;
+    fieldsEl.appendChild(renderField(it));
+  }
+  updatePreview();
+}
+
+function renderField(f) {
+  const row = document.createElement('div');
+  row.className = 'field' + (f.dep ? ' dep' : '');
+  const label = document.createElement('label');
+  label.className = 'lbl';
+  label.textContent = prettyLabel(f.name);
+  if (f.desc) {
+    const d = document.createElement('span');
+    d.className = 'desc'; d.textContent = f.desc;
+    label.appendChild(d);
+  }
+  row.appendChild(label);
+
+  const ctl = document.createElement('div');
+  ctl.className = 'ctl';
+  const changed = (rerender) => { updatePreview(); if (rerender) render(); scheduleAutoSave(); };
+
+  if (f.type === 'bool') {
+    const sw = document.createElement('label'); sw.className = 'switch';
+    const inp = document.createElement('input'); inp.type = 'checkbox'; inp.checked = f.value;
+    inp.addEventListener('change', () => { f.value = inp.checked; changed(true); });
+    const span = document.createElement('span'); span.className = 'slider';
+    sw.append(inp, span); ctl.appendChild(sw);
+  } else if (f.type === 'keycode') {
+    const sel = document.createElement('select');
+    const opts = COMMON_KEYCODES.includes(f.value) ? COMMON_KEYCODES : [f.value, ...COMMON_KEYCODES];
+    for (const k of opts) sel.add(new Option(k, k, false, k === f.value));
+    sel.addEventListener('change', () => { f.value = sel.value; changed(false); });
+    ctl.appendChild(sel);
+  } else if (f.type === 'enum') {
+    const sel = document.createElement('select');
+    for (const o of f.options) sel.add(new Option(o, o, false, o === f.value));
+    sel.addEventListener('change', () => { f.value = sel.value; changed(false); });
+    ctl.appendChild(sel);
+  } else if (f.type === 'color') {
+    const inp = document.createElement('input'); inp.type = 'color'; inp.value = f.value;
+    inp.style.cssText = 'width:44px;height:30px;padding:2px;flex:none;background:var(--field);border:1px solid var(--border);border-radius:8px;cursor:pointer';
+    const hex = document.createElement('input'); hex.type = 'text'; hex.value = f.value;
+    inp.addEventListener('input', () => { f.value = inp.value.toUpperCase(); hex.value = f.value; changed(false); });
+    hex.addEventListener('input', () => {
+      if (!/^#[0-9a-fA-F]{6}$/.test(hex.value)) return;
+      f.value = hex.value.toUpperCase(); inp.value = f.value; changed(false);
+    });
+    ctl.append(inp, hex);
+  } else if (f.type === 'number') {
+    const range = document.createElement('input'); range.type = 'range';
+    range.min = f.min; range.max = f.max; range.step = f.step; range.value = f.value;
+    const num = document.createElement('input'); num.type = 'number'; num.className = 'num';
+    num.step = f.step; num.value = f.value;
+    range.addEventListener('input', () => { f.value = parseFloat(range.value); num.value = f.value; changed(false); });
+    num.addEventListener('input', () => {
+      const v = parseFloat(num.value); if (Number.isNaN(v)) return;
+      f.value = v; range.value = v; changed(false);
+    });
+    ctl.append(range, num);
+  } else {
+    const inp = document.createElement('input'); inp.type = 'text'; inp.value = f.value;
+    if (f.type === 'text') inp.title = 'Expression Luau brute — modifiable en texte libre';
+    inp.addEventListener('input', () => { f.value = inp.value; changed(false); });
+    ctl.appendChild(inp);
+  }
+  row.appendChild(ctl);
+  return row;
+}
+
+// ------------------------------------------------------------- écriture
+function serialize(f) {
+  if (f.type === 'bool') return f.value ? 'true' : 'false';
+  if (f.type === 'keycode') return 'Enum.KeyCode.' + f.value;
+  if (f.type === 'string' || f.type === 'color') return JSON.stringify(String(f.value));
+  if (f.type === 'enum') return f.quoted ? JSON.stringify(String(f.value)) : String(f.value);
+  if (f.type === 'number') return f.isInt ? String(Math.round(f.value)) : String(f.value);
+  return String(f.value);
+}
+
+function buildBlockLines() {
+  return items.map(it => {
+    if (it.kind === 'raw') return it.text;
+    const indent = it.indent || '';
+    return `${indent}local ${it.name} = ${serialize(it)}${it.comment ? ' -- ' + it.comment : ''}`;
+  });
+}
+
+function updatePreview() {
+  const lines = buildBlockLines().filter(l => l.trim() !== '');
+  previewEl.textContent = lines.join('\n');
+  previewPanel.style.display = lines.length ? 'block' : 'none';
+}
+
+function scheduleAutoSave() {
+  if (!autoSave.checked || autoWrap.style.display === 'none' || !canWrite) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => save(true), 450);
+}
+
+async function save(silent) {
+  if (blockStart === -1) return;
+  const allLines = rawText.split('\n');
+  const newText = [...allLines.slice(0, blockStart), ...buildBlockLines(), ...allLines.slice(blockEnd)].join('\n');
+
+  if (bridge && bridgeFile) {
+    try {
+      const r = await fetch('/api/write?path=' + encodeURIComponent(bridgeFile), { method: 'PUT', body: newText });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || 'écriture refusée');
+      rawText = newText;
+      setStatus(silent ? 'Enregistré.' : 'Enregistré dans ' + d.path + '.', 'ok');
+      return;
+    } catch (err) { return setStatus('Échec de l’écriture : ' + err.message, 'err'); }
+  }
+
+  if (canWrite && handle) {
+    try {
+      const w = await handle.createWritable();
+      await w.write(newText); await w.close();
+      rawText = newText;
+      setStatus('Enregistré directement dans le fichier.', 'ok');
+      return;
+    } catch (err) { setStatus('Écriture directe impossible (' + err.message + '). Téléchargement en secours.', 'err'); }
+  }
+
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([newText], { type: 'text/plain' }));
+  a.download = (fnameEl.textContent || 'prefab.luau').split('/').pop();
+  a.click();
+  setStatus('Fichier téléchargé — remplace-le manuellement dans le projet.', 'ok');
+}
+
+function setStatus(msg, cls) {
+  statusEl.textContent = msg;
+  statusEl.className = 'status' + (cls ? ' ' + cls : '');
+}
+</script>
+</body>
+</html>

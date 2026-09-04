@@ -134,7 +134,14 @@
 </div>
 
 <script>
-  document.getElementById('form').addEventListener('submit', (e) => {
+  // Pont HatBridge : quand la page est servie par bridge.mjs, GDD.md est écrit
+  // directement à la racine du projet. Sinon, on retombe sur le téléchargement.
+  let bridge = false;
+  fetch('/api/ping', { signal: AbortSignal.timeout(1500) })
+    .then(r => r.json()).then(d => { bridge = d.hatbridge === true; })
+    .catch(() => { bridge = false; });
+
+  document.getElementById('form').addEventListener('submit', async (e) => {
     e.preventDefault();
 
     const nom = document.getElementById('nom').value.trim() || 'Sans titre';
@@ -168,6 +175,22 @@ ${plateforme}
 _Généré via HatInit le ${new Date().toLocaleDateString('fr-FR')}._
 `;
 
+    const r = document.getElementById('result');
+    r.className = 'result show';
+
+    if (bridge) {
+      try {
+        const res = await fetch('/api/write?path=GDD.md', { method: 'PUT', body: md });
+        const d = await res.json();
+        if (!d.ok) throw new Error(d.error || 'écriture refusée');
+        r.innerHTML = `<strong>GDD.md enregistré à la racine du projet.</strong><br>Dis "terminé" à Claude, tu peux fermer cet onglet.`;
+        fetch('/api/quit', { method: 'POST' }).catch(() => {});
+        return;
+      } catch (err) {
+        r.innerHTML = `<strong>Écriture directe impossible (${err.message}).</strong><br>Téléchargement à la place…`;
+      }
+    }
+
     const blob = new Blob([md], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -178,8 +201,6 @@ _Généré via HatInit le ${new Date().toLocaleDateString('fr-FR')}._
     a.click();
     setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
 
-    const r = document.getElementById('result');
-    r.className = 'result show';
     r.innerHTML = `<strong>GDD.md téléchargé.</strong><br>Déplace-le à la racine de ton projet, puis dis "terminé" à Claude.`;
   });
 </script>
