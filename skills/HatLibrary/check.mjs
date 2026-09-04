@@ -14,12 +14,18 @@
 //   6. sortie          — le fichier se termine par un `return`
 //   7. index           — une entrée avec des `tags:` existe dans index.md
 
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, access } from "node:fs/promises";
 import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-const SKILL_DIR = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
-const LIB = path.join(homedir(), "HatLib", "library");
+const SKILL_DIR = path.dirname(fileURLToPath(import.meta.url));
+// Mêmes deux bibliothèques que le hook : la personnelle d'abord, puis celle
+// livrée avec le dépôt cloné. On ne garde que celles qui existent vraiment.
+const ALL_ROOTS = [
+  path.join(homedir(), "HatLib", "library"),
+  path.resolve(SKILL_DIR, "..", "..", "library"),
+];
 
 // --- parseur du configurateur, extrait de la page pour rester la seule source de vérité ---
 const html = await readFile(path.join(SKILL_DIR, "configurator.html"), "utf8");
@@ -132,19 +138,34 @@ async function checkFile(file, indexText) {
 }
 
 // --- main ----------------------------------------------------------------
+const roots = [];
+for (const r of ALL_ROOTS) {
+  try { await access(path.join(r, "index.md")); roots.push(r); } catch {}
+}
+if (roots.length === 0) {
+  console.error("Aucune bibliothèque trouvée. Cherché dans :\n  " + ALL_ROOTS.join("\n  "));
+  process.exit(1);
+}
+
 let files = process.argv.slice(2);
 if (files[0] === "--all" || files.length === 0) {
   files = [];
-  const root = path.join(LIB, "snippets");
-  for (const dir of await readdir(root, { withFileTypes: true })) {
-    if (!dir.isDirectory()) continue;
-    for (const f of await readdir(path.join(root, dir.name))) {
-      if (f.endsWith(".luau")) files.push(path.join(root, dir.name, f));
+  for (const lib of roots) {
+    const root = path.join(lib, "snippets");
+    const dirs = await readdir(root, { withFileTypes: true }).catch(() => []);
+    for (const dir of dirs) {
+      if (!dir.isDirectory()) continue;
+      for (const f of await readdir(path.join(root, dir.name))) {
+        if (f.endsWith(".luau")) files.push(path.join(root, dir.name, f));
+      }
     }
   }
 }
 
-const indexText = await readFile(path.join(LIB, "index.md"), "utf8").catch(() => "");
+let indexText = "";
+for (const lib of roots) {
+  indexText += (await readFile(path.join(lib, "index.md"), "utf8").catch(() => "")) + "\n";
+}
 let failed = 0;
 for (const file of files) {
   const r = await checkFile(file, indexText);

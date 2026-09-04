@@ -1,0 +1,8 @@
+{
+  "name": "hatlib",
+  "version": "0.2.0",
+  "description": "Chaine d'outils Roblox : prefabs Luau reutilisables, configurateur visuel dans le navigateur, et generation du GDD.",
+  "author": { "name": "Haatmis" },
+  "homepage": "https://github.com/Haatmis/HatLib",
+  "keywords": ["roblox", "luau", "rojo", "prefabs", "gamedev"]
+}

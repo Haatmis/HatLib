@@ -36,13 +36,14 @@ Ne vérifie ça que si `setup.html` manque réellement — jamais à chaque invo
 ## Étape 2 — Ouvrir le formulaire
 
 **Voie normale — via le pont** (`bridge.mjs`, fourni par le skill `HatLibrary` ; nécessite Node ≥ 18).
-Si `.claude/skills/HatLibrary/bridge.mjs` existe, une seule commande — appel **normal**, surtout pas
-`run_in_background` (le pont se détache tout seul et rend la main aussitôt) :
+Il vit dans le dossier `HatLibrary` **voisin de celui-ci** (`../HatLibrary/bridge.mjs`), que les
+skills soient installés dans le projet ou par clone du dépôt. S'il existe, une seule commande — appel
+**normal**, surtout pas `run_in_background` (le pont se détache tout seul et rend la main aussitôt) :
 
 ```bash
-node "<racine>/.claude/skills/HatLibrary/bridge.mjs" \
+node "<dossier des skills>/HatLibrary/bridge.mjs" \
   --root "<racine du projet>" \
-  --page "<racine>/.claude/skills/HatInit/setup.html" \
+  --page "<dossier des skills>/HatInit/setup.html" \
   --open
 ```
 
@@ -110,6 +111,9 @@ passe par le skill `HatLibrary` — prefab copié puis réglé visuellement — 
 - Toute install/téléchargement (winget/brew/aftman/cargo/git clone) = confirmation explicite avant.
 - Le pont (`bridge.mjs`) n'écoute que sur `127.0.0.1`, n'expose que le dossier du projet, et s'arrête
   seul (30 min d'inactivité, ou dès que le formulaire est validé). Rien à nettoyer à la main.
+- **Tout ce qui s'installe par clone ou ajout (skills HatLib, serveur MCP) n'est visible qu'au
+  redémarrage suivant de Claude Code.** Le dire explicitement à chaque fois (message "8") : sans ça
+  l'utilisateur croit que c'est cassé et recommence l'installation. Ne jamais laisser deviner.
 - Sortie sobre en toute circonstance, y compris en tutoriel : phrases courtes, pas de récap d'étapes.
 
 ## Messages exacts (personnalisables)
@@ -215,3 +219,13 @@ Utilise-les tels quels, sans reformuler. `[...]` = contenu réel à insérer. La
 
 **EN :**
 > Rojo initialized, MCP connected. Environment ready for code.
+
+---
+
+### 8. Redémarrage nécessaire après une installation
+
+**FR :**
+> [ce qui vient d'être installé] est en place. Il faut **redémarrer Claude Code** pour que ce soit pris en compte — c'est normal, la liste n'est lue qu'au démarrage. Relance, puis on continue.
+
+**EN :**
+> [what was just installed] is in place. You need to **restart Claude Code** for it to be picked up — that's expected, the list is only read at startup. Restart, then we'll carry on.

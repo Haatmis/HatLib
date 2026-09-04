@@ -9,29 +9,34 @@ L'utilisateur demande une fonctionnalité courante en langage naturel. Il ne doi
 faire que **régler les options dans une page qui s'ouvre toute seule**. Le code du prefab ne passe
 jamais par le contexte de Claude : ni à la copie, ni au réglage.
 
-Deux dossiers à ne pas confondre : **ce skill** (`.claude/skills/HatLibrary/`, la logique + les
-outils) et **la bibliothèque de contenu** (`~/HatLib/library/`, les `.luau` + `index.md`, hors du
-projet de jeu, partagée via github.com/Haatmis/HatLib).
-`~/HatLib/` absent → confirmation puis `git clone https://github.com/Haatmis/HatLib ~/HatLib`.
-`~/HatLib/library/` absent → créer `index.md` + `snippets/` directement (local, non destructif).
+Deux dossiers à ne pas confondre : **ce skill** (la logique + les outils) et **la bibliothèque de
+contenu** (les `.luau` + `index.md`). La bibliothèque peut se trouver à deux endroits, cherchés dans
+cet ordre : `~/HatLib/library/` (personnelle, prioritaire) puis celle livrée avec le dépôt cloné
+(`<racine du dépôt>/library/`). Aucune des deux → proposer
+`git clone https://github.com/Haatmis/HatLib ~/HatLib`, ou créer `index.md` + `snippets/` à la main
+(local, non destructif).
 
 ## Le parcours — 3 appels d'outil, pas un de plus
 
 ### 1. Trouver
 
-Le hook `UserPromptSubmit` (`hint.mjs`) annonce déjà le prefab correspondant dès que l'utilisateur
-formule sa demande : si le hook a parlé, **passe directement à l'étape 2**. Sinon :
+Le hook `UserPromptSubmit` (`hint.mjs`) annonce déjà le prefab correspondant **avec son chemin
+absolu** dès que l'utilisateur formule sa demande : si le hook a parlé, **passe directement à
+l'étape 2**. Sinon :
 
 ```bash
-grep -i "sprint" ~/HatLib/library/index.md
+grep -i "sprint" ~/HatLib/library/index.md ~/.claude/skills/HatLib/library/index.md 2>/dev/null
 ```
 
-Jamais de `cat` sur `index.md`, sauf demande explicite ("qu'est-ce qu'il y a dans la biblio ?").
+Les deux bibliothèques possibles sont interrogées d'un coup : la personnelle (`~/HatLib/library`) et
+celle livrée avec le dépôt cloné en plugin. `grep` préfixe chaque résultat du fichier trouvé, donc la
+racine à utiliser à l'étape 2 se lit directement dans sa sortie. Jamais de `cat` sur `index.md`,
+sauf demande explicite ("qu'est-ce qu'il y a dans la biblio ?").
 
 ### 2. Copier — sans lire le fichier
 
 ```bash
-cp ~/HatLib/library/snippets/<categorie>/<Fichier>.luau <destination-dans-le-projet>
+cp <chemin absolu donné par le hook ou le grep> <destination-dans-le-projet>
 ```
 
 Destination usuelle en projet Rojo : `src/client/controllers/`, `src/server/`, `src/shared/`.
