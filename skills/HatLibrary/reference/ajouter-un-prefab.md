@@ -33,7 +33,7 @@ Règles :
   et commentaires libres sont autorisés dedans. Sans marqueur (ancien format), le bloc s'arrête à la
   première ligne vide.
 - Le commentaire de fin de ligne sert de libellé affiché. Il peut porter des annotations, retirées du
-  libellé : `min..max`, `options: A|B|C`, `si: AUTRE_OPTION`.
+  libellé : `min..max`, `options: A|B|C`, `si: AUTRE_OPTION`, `requiert: cat/Service.luau`.
 - Chaque effet optionnel derrière un `ENABLE_X`, **désactivé par défaut s'il exige un asset**
   (id d'animation, son) — sinon le prefab casse à la copie.
 - Terminer par `return true` : valide en ModuleScript comme en LocalScript.
@@ -52,6 +52,9 @@ Règles :
 | `-- options: A\|B\|C` | menu déroulant |
 | `-- ▸ Titre` | titre de section |
 | `-- si: ENABLE_X` | l'option n'apparaît que si `ENABLE_X` est coché |
+| `-- si: MODE = A\|B` | … que si `MODE` vaut A ou B (aussi `!=`, `>`, `<`, `>=`, `<=`) |
+| `-- requiert: cat/Service.luau` | cocher l'option pose ce service dans le projet (voir plus bas) |
+| nom en `*_ANCHOR` à 9 `options:` | grille d'ancrage 3×3 au lieu d'un menu déroulant |
 | `-- 🎬 APERÇU: famille/scenario` | aperçu animé au-dessus des réglages (voir plus bas) |
 | autre expression Luau | champ texte brut (secours) |
 
@@ -68,7 +71,7 @@ ligne dans le bloc CONFIG suffit.
 ```
 
 La **famille** désigne le module chargé (`preview-movement.js`, à côté de `configurator.html`), le
-**scénario** ce qu'il joue. Existants : `movement/sprint`, `movement/dash`, `movement/jump`. La
+**scénario** ce qu'il joue. Existants : `movement/sprint`, `movement/dash`, `movement/jump`, `stamina/hud`. La
 caméra suit le personnage (Côté / Dos / Face / Isométrique, glisser pour tourner, molette pour
 zoomer) et le module relit les valeurs à chaque image — bouger un curseur change l'animation
 immédiatement.
@@ -76,6 +79,30 @@ immédiatement.
 Sans annotation, ou si le module est absent, la page reste exactement celle d'avant : l'aperçu est
 un bonus, jamais une dépendance. Une nouvelle famille = un nouveau `preview-<famille>.js` exportant
 `cameras` et `mount(canvas, api)` ; le cœur du configurateur n'est pas à toucher.
+
+### Ressource partagée : `requiert:`
+
+Une option qui porte sur une **variable susceptible d'être globale** — l'endurance, la monnaie, la
+vie, l'inventaire — ne doit pas créer une jauge privée au prefab : deux consommateurs, et on se
+retrouve avec deux jauges indépendantes et deux affichages. Elle doit **poser le service** qui tient
+la ressource.
+
+```lua
+local ENABLE_STAMINA = false -- le sprint dépense l'endurance, requiert: systems/StaminaService.luau
+```
+
+À la coche, le configurateur copie `snippets/systems/StaminaService.luau` vers
+`src/shared/StaminaService.luau`, ajoute son `require` dans `init.server.luau` et
+`init.client.luau`, et ouvre un onglet pour le régler. **Si le fichier existe déjà, il n'est jamais
+écrasé** : on ouvre seulement son onglet. Décocher ne supprime rien — un autre prefab s'en sert
+peut-être déjà.
+
+Conséquence sur le découpage des réglages : le service porte la ressource (maximum,
+régénération, affichage), le prefab consommateur ne garde que **son coût**. Deux sources de
+vérité sur la même valeur, c'est un configurateur qui ment.
+
+Critère pour trier : promouvable si plusieurs fonctionnalités voudront la lire ou la dépenser ;
+locale si c'est un effet propre au prefab (FOV, durée de tween, id d'animation, touche).
 
 **Limite volontaire** : le configurateur règle des *valeurs*, pas de la logique. Une fonctionnalité
 qui n'existe pas encore s'écrit une fois en code, derrière un `ENABLE_X`, et devient pilotable
@@ -89,7 +116,8 @@ node .claude/skills/HatLibrary/check.mjs --all      # toute la bibliothèque
 ```
 
 Il contrôle : blocs Luau ouverts/fermés (`end` manquant ou en trop), bloc CONFIG lisible par le
-**parseur réel du configurateur**, `si:` qui pointe sur un booléen existant, valeur présente dans ses
+**parseur réel du configurateur**, `si:` qui pointe sur une option existante et compatible avec son
+opérateur, `requiert:` bien formé, valeur présente dans ses
 `options:`, nombre dans ses bornes `min..max`, aller-retour d'écriture neutre, `return` final, et
 entrée d'index avec `tags:`. Sortie non nulle si un prefab échoue.
 

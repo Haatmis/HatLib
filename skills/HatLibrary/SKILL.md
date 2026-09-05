@@ -49,6 +49,7 @@ la seule édition de code à faire à la main.
 node "<racine>/.claude/skills/HatLibrary/bridge.mjs" \
   --root "<racine du projet>" \
   --page "<racine>/.claude/skills/HatLibrary/configurator.html" \
+  --lib "<racine de la bibliothèque>" \
   --file "src/client/controllers/SprintController.luau" \
   --open
 ```
@@ -60,6 +61,17 @@ ouvre le navigateur lui-même, n'écoute que sur `127.0.0.1`, n'expose que `--ro
 lire et réécrire le fichier ciblé (donc **rien à glisser-déposer ni à télécharger**), s'arrête seul
 après 30 min d'inactivité ou au clic sur « Terminé », et réutilise le pont déjà ouvert s'il est
 relancé sur le même projet. (`--foreground` pour déboguer sans détachement.)
+
+`--lib` désigne la bibliothèque trouvée à l'étape 1 (le dossier qui contient `index.md` et
+`snippets/`). Sans lui tout marche, sauf la promotion décrite juste en dessous.
+
+**Promotion d'une ressource partagée.** Certaines options ne portent pas sur un effet local mais
+sur une ressource que plusieurs fonctionnalités voudront lire ou dépenser — l'endurance, la
+monnaie, la vie. Elles sont annotées `requiert: categorie/Service.luau` dans le bloc CONFIG.
+Les cocher pose le service dans `src/shared/`, ajoute son `require` côté serveur et client, et
+ouvre son propre onglet de réglage dans la même page — sans jamais écraser un service déjà
+présent et réglé. Rien à faire de ton côté : la page s'en charge, il suffit que `--lib` soit
+passé.
 
 Puis **stop, attends**. L'utilisateur coche les effets, bouge les curseurs, ça s'enregistre tout seul
 dans le fichier (Rojo pousse la version à jour dans Studio). Il dit « terminé » quand c'est réglé.

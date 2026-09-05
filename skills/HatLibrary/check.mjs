@@ -107,8 +107,28 @@ async function checkFile(file, indexText) {
   for (const f of fields) {
     if (f.dep) {
       const parent = byName.get(f.dep);
-      if (!parent) problems.push(`${f.name} : « si: ${f.dep} » ne correspond à aucune option`);
-      else if (parent.type !== "bool") problems.push(`${f.name} : « si: ${f.dep} » vise une option non booléenne`);
+      if (!parent) {
+        problems.push(`${f.name} : « si: ${f.dep} » ne correspond à aucune option`);
+      } else if (!f.depOp) {
+        if (parent.type !== "bool") problems.push(`${f.name} : « si: ${f.dep} » vise une option non booléenne`);
+      } else if (f.depOp === "=" || f.depOp === "!=") {
+        // Comparaison à des valeurs : elles doivent exister dans le parent.
+        const wanted = String(f.depValue).split("|").map((s) => s.trim()).filter(Boolean);
+        if (!wanted.length) {
+          problems.push(`${f.name} : « si: ${f.dep} ${f.depOp} » sans valeur à comparer`);
+        } else if (parent.type === "enum") {
+          for (const w of wanted) {
+            if (!parent.options.includes(w)) {
+              problems.push(`${f.name} : « si: ${f.dep} ${f.depOp} ${w} » — ${w} absent de options: ${parent.options.join("|")}`);
+            }
+          }
+        }
+      } else if (parent.type !== "number") {
+        problems.push(`${f.name} : « si: ${f.dep} ${f.depOp} … » compare une option non numérique`);
+      }
+    }
+    if (f.requires && !/^[a-z0-9_\-]+\/[A-Za-z0-9_\-]+\.luau$/.test(f.requires)) {
+      problems.push(`${f.name} : « requiert: ${f.requires} » n'a pas la forme categorie/Nom.luau`);
     }
     if (f.type === "enum" && !f.options.includes(String(f.value))) {
       problems.push(`${f.name} : valeur ${JSON.stringify(f.value)} absente de options: ${f.options.join("|")}`);

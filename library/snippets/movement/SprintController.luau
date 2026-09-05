@@ -1,8 +1,12 @@
 --[[
 	SprintController — sprint côté client, avec effets optionnels.
-	Clavier / manette / bouton tactile, FOV, animation, endurance + barre.
+	Clavier / manette / bouton tactile, FOV, animation, endurance.
 	Placement : src/client/controllers/ (ModuleScript `require`) ou StarterPlayerScripts (LocalScript).
 	Tout ce qui se règle est dans le bloc CONFIG ci-dessous — le reste n'a pas besoin d'être touché.
+
+	L'endurance n'appartient pas au sprint : c'est une ressource du joueur, tenue par
+	StaminaService (maximum, régénération, affichage). Le sprint ne décide que de ce
+	qu'il coûte. Cocher l'option pose le service dans le projet s'il n'y est pas encore.
 ]]
 
 -- ⚙️ CONFIG
@@ -22,15 +26,10 @@ local ENABLE_ANIMATION = false -- joue une animation de course personnalisée
 local ANIMATION_ID = "rbxassetid://0" -- id de l'animation de course, si: ENABLE_ANIMATION
 local ANIMATION_SPEED = 1 -- vitesse de lecture de l'animation, si: ENABLE_ANIMATION, 0.1..3
 -- ▸ Endurance
-local ENABLE_STAMINA = false -- le sprint consomme une jauge d'endurance
-local STAMINA_MAX = 100 -- endurance maximale, si: ENABLE_STAMINA, 10..300
-local STAMINA_DRAIN = 20 -- consommation par seconde, si: ENABLE_STAMINA, 1..100
-local STAMINA_REGEN = 15 -- récupération par seconde, si: ENABLE_STAMINA, 1..100
-local STAMINA_REGEN_DELAY = 1 -- délai avant récupération en secondes, si: ENABLE_STAMINA, 0..5
-local STAMINA_MIN_TO_START = 5 -- minimum requis pour relancer un sprint, si: ENABLE_STAMINA, 0..50
-local DRAIN_ONLY_WHEN_MOVING = true -- ne consomme pas à l'arrêt, si: ENABLE_STAMINA
-local ENABLE_STAMINA_BAR = true -- affiche une barre d'endurance à l'écran, si: ENABLE_STAMINA
-local STAMINA_BAR_COLOR = "#5B8CFF" -- couleur de la barre, si: ENABLE_STAMINA_BAR
+local ENABLE_STAMINA = false -- le sprint dépense l'endurance du joueur, requiert: systems/StaminaService.luau
+local STAMINA_COST = 20 -- dépense par seconde de sprint, si: ENABLE_STAMINA, 1..100
+local STAMINA_MIN_TO_START = 5 -- endurance minimale pour relancer un sprint, si: ENABLE_STAMINA, 0..50
+local DRAIN_ONLY_WHEN_MOVING = true -- ne dépense pas à l'arrêt, si: ENABLE_STAMINA
 -- ▸ Entrées
 local ENABLE_MOBILE_BUTTON = true -- bouton tactile automatique sur mobile
 local ENABLE_GAMEPAD = true -- support manette
@@ -39,10 +38,12 @@ local GAMEPAD_KEY = Enum.KeyCode.ButtonL3 -- bouton de sprint à la manette, si:
 
 local ContextActionService = game:GetService("ContextActionService")
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local ACTION_NAME = "HatLibSprint"
+local DRAIN_REASON = "Sprint"
 
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
@@ -51,13 +52,35 @@ local humanoid: Humanoid? = nil
 local sprintTrack: AnimationTrack? = nil
 local sprinting = false
 local held = false
-local stamina = STAMINA_MAX
-local timeSinceDrain = math.huge
 local baseFov = camera and camera.FieldOfView or 70
 local speedTween: Tween? = nil
 local fovTween: Tween? = nil
-local barRoot: Frame? = nil
-local barFill: Frame? = nil
+local Stamina = nil
+
+-- ------------------------------------------------------------- endurance
+-- La ressource est partagée : on retrouve le service où qu'il soit rangé dans
+-- ReplicatedStorage, plutôt que d'imposer un nom de dossier.
+local function findStamina()
+	for _ = 1, 50 do
+		local found = ReplicatedStorage:FindFirstChild("StaminaService", true)
+		if found and found:IsA("ModuleScript") then
+			return require(found)
+		end
+		task.wait(0.2)
+	end
+	warn("[Sprint] ENABLE_STAMINA est actif mais StaminaService est introuvable dans ReplicatedStorage.")
+	return nil
+end
+
+local function hasStaminaToStart(): boolean
+	if not Stamina then return true end
+	return Stamina.Get() >= STAMINA_MIN_TO_START
+end
+
+local function setDrain(on: boolean)
+	if not Stamina then return end
+	Stamina.SetDrain(DRAIN_REASON, on and STAMINA_COST or 0)
+end
 
 -- ------------------------------------------------------------------ effets
 
@@ -100,62 +123,18 @@ local function setAnimation(on: boolean)
 	end
 end
 
--- -------------------------------------------------------- barre d'endurance
-
-local function ensureBar()
-	if not (ENABLE_STAMINA and ENABLE_STAMINA_BAR) or barFill then return end
-	local playerGui = player:FindFirstChildOfClass("PlayerGui")
-	if not playerGui then return end
-
-	local gui = playerGui:FindFirstChild("HatLibSprintGui")
-	if not gui then
-		local screen = Instance.new("ScreenGui")
-		screen.Name = "HatLibSprintGui"
-		screen.ResetOnSpawn = false
-		screen.IgnoreGuiInset = true
-		screen.Parent = playerGui
-		gui = screen
-	end
-
-	local root = Instance.new("Frame")
-	root.Name = "StaminaBar"
-	root.AnchorPoint = Vector2.new(0.5, 1)
-	root.Position = UDim2.new(0.5, 0, 1, -14)
-	root.Size = UDim2.new(0, 220, 0, 10)
-	root.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	root.BackgroundTransparency = 0.55
-	root.BorderSizePixel = 0
-	root.Parent = gui
-	Instance.new("UICorner").Parent = root
-
-	local fill = Instance.new("Frame")
-	fill.Name = "Fill"
-	fill.Size = UDim2.fromScale(1, 1)
-	fill.BackgroundColor3 = Color3.fromHex(STAMINA_BAR_COLOR)
-	fill.BorderSizePixel = 0
-	fill.Parent = root
-	Instance.new("UICorner").Parent = fill
-
-	barRoot, barFill = root, fill
-end
-
-local function updateBar()
-	local root, fill = barRoot, barFill
-	if not root or not fill then return end
-	local ratio = math.clamp(stamina / STAMINA_MAX, 0, 1)
-	fill.Size = UDim2.fromScale(ratio, 1)
-	root.Visible = sprinting or ratio < 0.999
-end
-
 -- ------------------------------------------------------------- état sprint
 
 local function setSprinting(on: boolean)
 	if on == sprinting then return end
-	if on and ENABLE_STAMINA and stamina < STAMINA_MIN_TO_START then return end
+	if on and ENABLE_STAMINA and not hasStaminaToStart() then return end
 	sprinting = on
 	setWalkSpeed(on and SPRINT_SPEED or WALK_SPEED)
 	setFov(on)
 	setAnimation(on)
+	if not on then
+		setDrain(false)
+	end
 end
 
 local function onAction(_action: string, state: Enum.UserInputState): Enum.ContextActionResult
@@ -203,17 +182,20 @@ local function onCharacter(character: Model)
 	humanoid = h
 	sprinting = false
 	held = false
-	stamina = STAMINA_MAX
-	timeSinceDrain = math.huge
+	setDrain(false)
 
 	h.WalkSpeed = WALK_SPEED
 	setFov(false)
 	loadSprintAnimation(h)
-	ensureBar()
-	updateBar()
 
 	h.Died:Connect(function()
 		setSprinting(false)
+	end)
+end
+
+if ENABLE_STAMINA then
+	task.spawn(function()
+		Stamina = findStamina()
 	end)
 end
 
@@ -232,28 +214,23 @@ if ENABLE_MOBILE_BUTTON then
 end
 
 if ENABLE_STAMINA then
-	RunService.Heartbeat:Connect(function(dt: number)
+	RunService.Heartbeat:Connect(function()
 		local h = humanoid
-		if not h or h.Health <= 0 then return end
+		if not Stamina then return end
+		if not h or h.Health <= 0 then
+			setDrain(false)
+			return
+		end
 
 		local moving = (not DRAIN_ONLY_WHEN_MOVING) or h.MoveDirection.Magnitude > 0.1
-		if sprinting and moving then
-			stamina = math.max(0, stamina - STAMINA_DRAIN * dt)
-			timeSinceDrain = 0
-			if stamina <= 0 then
-				setSprinting(false)
-			end
-		else
-			timeSinceDrain += dt
-			if timeSinceDrain >= STAMINA_REGEN_DELAY and stamina < STAMINA_MAX then
-				stamina = math.min(STAMINA_MAX, stamina + STAMINA_REGEN * dt)
-			end
-			-- en mode maintien, on repart automatiquement dès que la jauge le permet
-			if held and SPRINT_MODE ~= "Toggle" and not sprinting and stamina >= STAMINA_MIN_TO_START then
-				setSprinting(true)
-			end
+		setDrain(sprinting and moving)
+
+		if sprinting and Stamina.Get() <= 0 then
+			setSprinting(false)
+		elseif held and SPRINT_MODE ~= "Toggle" and not sprinting and hasStaminaToStart() then
+			-- en mode maintien, on repart dès que la jauge le permet
+			setSprinting(true)
 		end
-		updateBar()
 	end)
 end
 

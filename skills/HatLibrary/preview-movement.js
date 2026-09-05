@@ -213,7 +213,7 @@ export function mount(canvas, api) {
     const walk = num("WALK_SPEED", 16), run = num("SPRINT_SPEED", 24);
     const tween = num("SPEED_TWEEN_TIME", 0.25);
     const useStam = bool("ENABLE_STAMINA", false);
-    const drain = num("STAMINA_DRAIN", 20), regen = num("STAMINA_REGEN", 15);
+    const drain = num("STAMINA_COST", 20), regen = num("STAMINA_REGEN", 15);
     const max = num("STAMINA_MAX", 100), minStart = num("STAMINA_MIN_TO_START", 5);
     const delay = num("STAMINA_REGEN_DELAY", 1);
 

@@ -67,6 +67,19 @@
     background:var(--field);border:1px solid var(--border);color:var(--muted)}
   .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
   .viewbar .hint{margin-left:auto;font-size:11px;color:var(--muted)}
+  .tabs{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  .tab{font:inherit;font-size:12px;padding:6px 12px;border-radius:8px;cursor:pointer;
+    background:var(--panel);border:1px solid var(--border);color:var(--muted);
+    font-family:ui-monospace,Consolas,monospace}
+  .tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .reqnote{font-size:11px;color:var(--muted);white-space:nowrap}
+  .anchors{display:grid;grid-template-columns:repeat(3,20px);grid-gap:4px}
+  .anchor{width:20px;height:20px;padding:0;border-radius:5px;cursor:pointer;
+    background:var(--field);border:1px solid var(--border)}
+  .anchor.on{background:var(--accent);border-color:var(--accent)}
+  .promo{margin-top:10px;padding:10px 12px;border-radius:9px;font-size:12px;
+    background:rgba(63,212,138,.12);border:1px solid rgba(63,212,138,.35);color:var(--text)}
+  .promo b{font-family:ui-monospace,Consolas,monospace;font-weight:600}
 </style>
 </head>
 <body>
@@ -81,6 +94,8 @@
     <input type="file" id="picker" accept=".luau,.lua" style="display:none">
   </div>
 
+  <div class="tabs" id="tabs" style="display:none"></div>
+
   <div class="panel" id="viewPanel" style="display:none">
     <canvas id="stage"></canvas>
     <div class="viewbar" id="viewbar"></div>
@@ -90,6 +105,7 @@
     <div class="filerow"><b id="fname"></b> <span class="badge" id="rwBadge"></span></div>
     <div id="fields"></div>
     <div id="emptyMsg" class="empty" style="display:none">Aucun bloc <code>⚙️ CONFIG</code> trouvé dans ce fichier.</div>
+    <div id="promo" class="promo" style="display:none"></div>
     <div class="actions">
       <button class="btn-primary" id="saveBtn" disabled>Enregistrer</button>
       <button class="btn-ghost" id="reloadBtn">Recharger</button>
@@ -116,8 +132,10 @@ const COMMON_KEYCODES = ["LeftShift","RightShift","LeftControl","RightControl","
   "ButtonL3","ButtonR3","ButtonL1","ButtonR1","ButtonA","ButtonB","ButtonX","ButtonY"];
 
 const params = new URLSearchParams(location.search);
-const bridgeFile = params.get('file');   // mode pont : chemin relatif au projet
+let bridgeFile = params.get('file');     // mode pont : chemin relatif au projet, fichier courant
 let bridge = false;                      // pont HatBridge disponible ?
+let sharedFolder = 'Shared';             // nom du dossier ReplicatedStorage monté sur src/shared
+const openFiles = [];                    // onglets : { path, label } — le prefab et ses services
 
 let handle = null;      // FileSystemFileHandle (drag&drop) — écriture directe hors pont
 let canWrite = false;
@@ -134,7 +152,140 @@ const fieldsEl = $('fields'), emptyMsg = $('emptyMsg'), saveBtn = $('saveBtn');
 const reloadBtn = $('reloadBtn'), doneBtn = $('doneBtn'), autoWrap = $('autoWrap'), autoSave = $('autoSave');
 const statusEl = $('status'), previewPanel = $('previewPanel'), previewEl = $('preview');
 const viewPanel = $('viewPanel'), stageEl = $('stage'), viewbarEl = $('viewbar');
+const tabsEl = $('tabs'), promoEl = $('promo');
 let stage = null;       // aperçu animé monté, ou null si le prefab n'en déclare pas
+
+// ------------------------------------------------------- ressources partagées
+// Une option de prefab peut porter sur une ressource que plusieurs
+// fonctionnalités voudront lire ou dépenser (endurance, monnaie, vie). La cocher
+// ne doit pas créer une copie enfermée dans ce prefab : ça pose le service qui
+// tient la ressource, une fois pour le projet, et ça ouvre son réglage.
+
+const requireLine = (name) =>
+  `require(game:GetService("ReplicatedStorage"):WaitForChild("${sharedFolder}"):WaitForChild("${name}"))`;
+
+async function readProject(path) {
+  try {
+    const r = await fetch('/api/read?path=' + encodeURIComponent(path));
+    const d = await r.json();
+    return d.ok ? d.text : null;
+  } catch { return null; }
+}
+
+async function writeProject(path, text) {
+  const r = await fetch('/api/write?path=' + encodeURIComponent(path), { method: 'PUT', body: text });
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.error || 'écriture refusée');
+  return d.path;
+}
+
+// Le nom du dossier vient du mapping Rojo, pas d'une convention devinée.
+async function resolveSharedFolder() {
+  const raw = await readProject('default.project.json');
+  if (!raw) return;
+  try {
+    const tree = JSON.parse(raw).tree || {};
+    const rs = tree.ReplicatedStorage || {};
+    for (const [key, node] of Object.entries(rs)) {
+      if (node && typeof node === 'object' && String(node.$path || '').replace(/\\/g, '/') === 'src/shared') {
+        sharedFolder = key;
+        return;
+      }
+    }
+  } catch { /* projet illisible : on garde « Shared » */ }
+}
+
+// Ajoute le `require` du service dans les scripts de démarrage, sans doublon.
+async function wireRequires(name) {
+  const wired = [];
+  for (const path of ['src/server/init.server.luau', 'src/client/init.client.luau']) {
+    const text = await readProject(path);
+    if (text === null || text.includes(name)) continue;
+    const sep = text.endsWith('\n') ? '' : '\n';
+    await writeProject(path, text + sep + '\n' + requireLine(name) + '\n');
+    wired.push(path);
+  }
+  return wired;
+}
+
+async function promote(field) {
+  const libPath = field.requires;                       // ex. systems/StaminaService.luau
+  const name = libPath.split('/').pop().replace(/\.luau$/i, '');
+  const dest = 'src/shared/' + name + '.luau';
+
+  if (!bridge) {
+    return setStatus('Option activée. Sans le pont, copie ' + libPath + ' dans ' + dest + ' à la main.', 'err');
+  }
+
+  // Déjà là et déjà réglé : on n'écrase rien, on ouvre juste son onglet.
+  const existing = await readProject(dest);
+  if (existing !== null) {
+    addTab(dest, name);
+    showPromo(`<b>${name}</b> est déjà dans le projet — la jauge est partagée, rien n'a été écrasé. `
+      + `Son onglet est en haut de la page.`);
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/lib?path=' + encodeURIComponent(libPath));
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'prefab introuvable dans la bibliothèque');
+    await writeProject(dest, d.text);
+    const wired = await wireRequires(name);
+    addTab(dest, name);
+    showPromo(`<b>${name}</b> a été posé dans <b>${dest}</b>`
+      + (wired.length ? ` et chargé depuis ${wired.map(p => '<b>' + p + '</b>').join(' et ')}` : '')
+      + `. Le maximum, la récupération et l'affichage se règlent dans son onglet, en haut de la page.`);
+  } catch (err) {
+    setStatus('Impossible de poser ' + name + ' : ' + err.message, 'err');
+  }
+}
+
+// Le fichier ouvert réclame peut-être déjà des services posés lors d'une session
+// précédente : leurs onglets doivent réapparaître sans qu'on décoche/recoche.
+// Le service posé reste joignable même si l'option est décochée — il est dans le
+// projet, et un autre prefab s'en sert peut-être.
+async function openExistingRequirements() {
+  if (!bridge) return;
+  for (const it of items) {
+    if (it.kind !== 'field' || !it.requires) continue;
+    const name = it.requires.split('/').pop().replace(/\.luau$/i, '');
+    const dest = 'src/shared/' + name + '.luau';
+    if (await readProject(dest) !== null) addTab(dest, name);
+  }
+}
+
+function showPromo(html) {
+  promoEl.innerHTML = html;
+  promoEl.style.display = 'block';
+}
+
+// ------------------------------------------------------------------ onglets
+function addTab(path, label) {
+  if (!openFiles.some(f => f.path === path)) openFiles.push({ path, label });
+  renderTabs();
+}
+
+function renderTabs() {
+  tabsEl.innerHTML = '';
+  tabsEl.style.display = openFiles.length > 1 ? 'flex' : 'none';
+  for (const f of openFiles) {
+    const b = document.createElement('button');
+    b.className = 'tab' + (f.path === bridgeFile ? ' on' : '');
+    b.textContent = f.label;
+    b.addEventListener('click', () => switchTo(f.path));
+    tabsEl.appendChild(b);
+  }
+}
+
+async function switchTo(path) {
+  if (path === bridgeFile) return;
+  await save(true);            // on ne perd pas les réglages en cours
+  bridgeFile = path;
+  promoEl.style.display = 'none';
+  await loadFromBridge();
+  renderTabs();
+}
 
 // ---------------------------------------------------------------- chargement
 init();
@@ -149,6 +300,8 @@ async function init() {
     dropPanel.style.display = 'none';
     doneBtn.style.display = '';
     autoWrap.style.display = '';
+    await resolveSharedFolder();
+    addTab(bridgeFile, bridgeFile.split('/').pop().replace(/\.luau$/i, ''));
     await loadFromBridge();
   } else if (bridge) {
     $('sub').textContent = "Dépose un fichier .luau du projet — ou relance le configurateur en indiquant le fichier.";
@@ -168,6 +321,8 @@ async function loadFromBridge() {
     parseConfig(); render(); setupStage();
     fileInfo.style.display = 'block';
     setStatus('', '');
+    renderTabs();
+    await openExistingRequirements();
   } catch (err) {
     fileInfo.style.display = 'block';
     setStatus('Impossible de lire ' + bridgeFile + ' (' + err.message + ')', 'err');
@@ -257,15 +412,23 @@ function parseConfig() {
 function parseField(name, valueRaw, comment, indent) {
   const f = { kind: 'field', name, raw: valueRaw, value: valueRaw, type: 'text', indent: indent || '' };
 
-  const depM = comment.match(/\b(?:si|if)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)/i);
-  if (depM) f.dep = depM[1];
+  // « si: AUTRE », « si: AUTRE = A|B », « si: AUTRE != A », « si: AUTRE > 0 »
+  const depM = comment.match(/\b(?:si|if)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*(!=|>=|<=|=|>|<)?\s*([^,]*)/i);
+  if (depM) {
+    f.dep = depM[1];
+    if (depM[2]) { f.depOp = depM[2]; f.depValue = (depM[3] || '').trim(); }
+  }
+  // « requiert: systems/StaminaService.luau » — cocher pose le service dans le projet.
+  const reqM = comment.match(/\brequiert\s*:\s*([A-Za-z0-9_\-./]+\.luau)/i);
+  if (reqM) f.requires = reqM[1];
   const optM = comment.match(/\boptions?\s*:\s*([^—]+)$/i);
   const rangeM = comment.match(/(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)/);
 
   // Le libellé est le commentaire débarrassé de ses annotations.
   f.comment = comment;
   f.desc = comment
-    .replace(/\b(?:si|if)\s*:\s*[A-Za-z_][A-Za-z0-9_]*/ig, '')
+    .replace(/\b(?:si|if)\s*:\s*[^,]+/ig, '')
+    .replace(/\brequiert\s*:\s*[^,]+/ig, '')
     .replace(/\boptions?\s*:\s*[^—]+$/i, '')
     .replace(/(-?\d+(?:\.\d+)?)\s*\.\.\s*(-?\d+(?:\.\d+)?)/g, '')
     .split(',').map(s => s.trim()).filter(Boolean).join(', ');
@@ -293,6 +456,23 @@ function parseField(name, valueRaw, comment, indent) {
 // ---------------------------------------------------------------- rendu
 const fieldByName = n => items.find(it => it.kind === 'field' && it.name === n);
 
+// Une dépendance sans opérateur porte sur un booléen ; avec opérateur, elle
+// compare la valeur du parent (« = A|B » accepte une liste de valeurs).
+function depSatisfied(f, parent) {
+  if (!f.depOp) return parent.type !== 'bool' || parent.value === true;
+  const list = String(f.depValue).split('|').map(s => s.trim());
+  const current = String(parent.value);
+  if (f.depOp === '=') return list.includes(current);
+  if (f.depOp === '!=') return !list.includes(current);
+  const a = parseFloat(parent.value), b = parseFloat(f.depValue);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return true;
+  if (f.depOp === '>') return a > b;
+  if (f.depOp === '<') return a < b;
+  if (f.depOp === '>=') return a >= b;
+  if (f.depOp === '<=') return a <= b;
+  return true;
+}
+
 function isVisible(f, seen) {
   if (!f.dep) return true;
   seen = seen || new Set();
@@ -300,7 +480,7 @@ function isVisible(f, seen) {
   seen.add(f.name);
   const parent = fieldByName(f.dep);
   if (!parent) return true;
-  if (parent.type === 'bool' && parent.value !== true) return false;
+  if (!depSatisfied(f, parent)) return false;
   return isVisible(parent, seen);
 }
 
@@ -355,9 +535,41 @@ function renderField(f) {
   if (f.type === 'bool') {
     const sw = document.createElement('label'); sw.className = 'switch';
     const inp = document.createElement('input'); inp.type = 'checkbox'; inp.checked = f.value;
-    inp.addEventListener('change', () => { f.value = inp.checked; changed(true); });
+    inp.addEventListener('change', () => {
+      f.value = inp.checked;
+      changed(true);
+      // Une option qui porte sur une ressource partagée pose le service qui la
+      // tient, au lieu d'en garder une copie enfermée dans ce prefab.
+      if (f.value && f.requires) promote(f);
+    });
     const span = document.createElement('span'); span.className = 'slider';
     sw.append(inp, span); ctl.appendChild(sw);
+    if (f.requires) {
+      const note = document.createElement('span');
+      note.className = 'reqnote';
+      note.textContent = 'pose ' + f.requires.split('/').pop();
+      ctl.appendChild(note);
+    }
+  } else if (f.type === 'enum' && /ANCHOR|ANCRAGE/i.test(f.name) && f.options.length === 9) {
+    // Neuf ancrages : une grille 3×3 dit d'un coup d'œil ce qu'un menu déroulant
+    // oblige à lire mot à mot.
+    const grid = document.createElement('div');
+    grid.className = 'anchors';
+    const cells = [];
+    f.options.forEach((o) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'anchor' + (o === f.value ? ' on' : '');
+      b.title = o;
+      b.addEventListener('click', () => {
+        f.value = o;
+        cells.forEach(c => c.el.classList.toggle('on', c.opt === o));
+        changed(false);
+      });
+      cells.push({ el: b, opt: o });
+      grid.appendChild(b);
+    });
+    ctl.appendChild(grid);
   } else if (f.type === 'keycode') {
     const sel = document.createElement('select');
     const opts = COMMON_KEYCODES.includes(f.value) ? COMMON_KEYCODES : [f.value, ...COMMON_KEYCODES];

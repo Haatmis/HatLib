@@ -3,10 +3,11 @@
 // Sans dépendance. Écoute uniquement sur 127.0.0.1, confine tous les accès au dossier --root.
 //
 //   node bridge.mjs --root <projet> --page <page.html> [--file <chemin/relatif>] [--open]
-//                   [--port 7777] [--idle 1800]
+//                   [--lib <bibliothèque>] [--port 7777] [--idle 1800]
 //
 // La page servie a accès à :
 //   GET  /api/ping            -> { hatbridge:true, root }
+//   GET  /api/lib?path=rel    -> { ok, path, text }  (lecture dans <lib>/snippets)
 //   GET  /api/read?path=rel   -> { ok, path, text }
 //   PUT  /api/write?path=rel  -> { ok }  (corps = contenu du fichier)
 //   POST /api/quit            -> { ok }  (arrêt du pont)
@@ -33,6 +34,9 @@ function parseArgs(argv) {
 const args = parseArgs(process.argv.slice(2));
 const root = path.resolve(args.root || process.cwd());
 const pagePath = args.page ? path.resolve(String(args.page)) : null;
+// Bibliothèque de prefabs : la page peut y puiser un service à poser dans le
+// projet quand une option le réclame. Lecture seule, confinée à ce dossier.
+const libRoot = args.lib ? path.resolve(String(args.lib)) : null;
 const basePort = Number(args.port) || 7777;
 const idleMs = (Number(args.idle) || 1800) * 1000;
 
@@ -128,6 +132,18 @@ const server = createServer(async (req, res) => {
 
   try {
     if (p === "/api/ping") return json(res, 200, { hatbridge: true, root });
+
+    // Lecture d'un prefab de la bibliothèque, pour le poser dans le projet.
+    if (p === "/api/lib" && req.method === "GET") {
+      if (!libRoot) return json(res, 404, { ok: false, error: "aucune bibliothèque (--lib) déclarée" });
+      const rel = toPosix(url.searchParams.get("path") || "").replace(/^\/+/, "");
+      const abs = path.resolve(libRoot, "snippets", rel);
+      if (!abs.startsWith(path.join(libRoot, "snippets") + path.sep)) {
+        throw new Error("chemin hors de la bibliothèque");
+      }
+      const text = await readFile(abs, "utf8");
+      return json(res, 200, { ok: true, path: rel, text });
+    }
 
     if (p === "/api/read" && req.method === "GET") {
       const abs = resolveInRoot(url.searchParams.get("path"));
